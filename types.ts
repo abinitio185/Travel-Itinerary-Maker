@@ -10,6 +10,11 @@ export interface ItineraryDay {
 
 export type ThemeType = 'luxe' | 'vanguard' | 'wanderlust';
 
+export interface PricingRow {
+  label: string;
+  value: string;
+}
+
 export interface ThemeStyles {
   primaryColor: string;
   accentColor: string;
@@ -28,13 +33,8 @@ export interface TravelPackage {
   duration: string;
   currency: string;
   
-  // Specific Motorcycle Tour Pricing Fields
-  soloBikePrice?: string;
-  dualRiderPrice?: string;
-  ownBikePrice?: string;
-  extraPrice?: string;
-  dualSharingExtra?: string;
-  singleRoomExtra?: string;
+  // Dynamic Pricing instead of fixed fields
+  pricing: PricingRow[];
   
   inclusions: string[];
   exclusions: string[];

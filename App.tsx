@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { TravelPackage, AppState, ItineraryDay, ThemeType, ThemeStyles } from './types';
+import { TravelPackage, AppState, ItineraryDay, ThemeType, ThemeStyles, PricingRow } from './types';
 import { parseItineraryFromText, generateDayImage, GeminiError } from './services/geminiService';
 
 declare const mammoth: any;
@@ -28,7 +28,7 @@ const THEME_PRESETS: Record<ThemeType, ThemeStyles> = {
     headingWeight: '900',
     headingStyle: 'normal',
     bodyFont: "'Inter', sans-serif",
-    bodyWeight: '400',
+    bodyWeight: '300',
     bodyStyle: 'normal'
   },
   wanderlust: {
@@ -37,7 +37,7 @@ const THEME_PRESETS: Record<ThemeType, ThemeStyles> = {
     backgroundColor: '#F5F1E9',
     headingFont: "'Lora', serif",
     headingWeight: '700',
-    headingStyle: 'normal',
+    headingStyle: 'italic',
     bodyFont: "'Lora', serif",
     bodyWeight: '400',
     bodyStyle: 'normal'
@@ -68,7 +68,7 @@ const App: React.FC = () => {
   });
 
   const [activeRegenIndex, setActiveRegenIndex] = useState<number | null>(null);
-  const [activeUploadIndex, setActiveUploadIndex] = useState<number | null>(null);
+  const [activeUploadIndex, setActiveUploadIndex] = useState<number | null>(null); // -1 for cover
   const [pendingUploadImage, setPendingUploadImage] = useState<string | null>(null);
   const [regenPrompt, setRegenPrompt] = useState("");
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('portrait');
@@ -77,6 +77,7 @@ const App: React.FC = () => {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
   const flyerRef = useRef<HTMLDivElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const ensureApiKey = async () => {
     if (window.aistudio) {
@@ -102,17 +103,11 @@ const App: React.FC = () => {
         try {
             const result = await mammoth.extractRawText({ arrayBuffer });
             textContent = result.value;
-            if (!textContent.trim()) {
-                throw new Error("The uploaded .docx file appears to be empty.");
-            }
         } catch (mErr: any) {
             throw new Error(`Failed to read .docx file: ${mErr.message}`);
         }
       } else if (file.name.endsWith('.txt') || file.name.endsWith('.doc')) {
         textContent = await file.text();
-        if (!textContent.trim()) {
-            throw new Error("The uploaded text file is empty.");
-        }
       } else {
         throw new Error("Unsupported format. Please upload a .docx, .doc, or .txt file.");
       }
@@ -122,16 +117,11 @@ const App: React.FC = () => {
       setState({
         step: 'edit',
         packageData: {
-          packageName: parsedData.packageName || 'Motorcycle Tour',
-          destination: parsedData.destination || 'The Open Road',
+          packageName: parsedData.packageName || 'Custom Travel Plan',
+          destination: parsedData.destination || 'Global',
           duration: parsedData.duration || 'Custom Duration',
           currency: parsedData.currency || 'USD',
-          soloBikePrice: parsedData.soloBikePrice || '',
-          dualRiderPrice: parsedData.dualRiderPrice || '',
-          ownBikePrice: parsedData.ownBikePrice || '',
-          extraPrice: parsedData.extraPrice || '',
-          dualSharingExtra: parsedData.dualSharingExtra || '',
-          singleRoomExtra: parsedData.singleRoomExtra || '',
+          pricing: parsedData.pricing || [{ label: 'Standard Price', value: '' }],
           inclusions: parsedData.inclusions || [],
           exclusions: parsedData.exclusions || [],
           itinerary: parsedData.itinerary || [],
@@ -145,114 +135,7 @@ const App: React.FC = () => {
         error: null
       });
     } catch (err: any) {
-      console.error("File processing failed:", err);
-      let userFriendlyMessage = err.message;
-      if (err instanceof GeminiError) {
-          userFriendlyMessage = `AI Processing Error: ${err.message}`;
-      } else if (err.name === 'QuotaExceededError') {
-          userFriendlyMessage = "Storage quota exceeded on your device. Cannot process large files.";
-      }
-      setState(prev => ({ ...prev, isLoading: false, error: userFriendlyMessage }));
-    }
-  };
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (file.size > 2 * 1024 * 1024) {
-        setState(prev => ({ ...prev, error: "Logo file size must be less than 2MB." }));
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => setState(prev => ({ ...prev, error: "Failed to read the logo image." }));
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        handleFieldChange('logoUrl', event.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleCoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-        setState(prev => ({ ...prev, error: "Cover image size must be less than 5MB." }));
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => setState(prev => ({ ...prev, error: "Failed to read the cover image." }));
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        handleFieldChange('coverImageUrl', event.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleDayImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-        setState(prev => ({ ...prev, error: "Day image size must be less than 5MB." }));
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => setState(prev => ({ ...prev, error: "Failed to read the image file." }));
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        // If in preview mode, we stage it for confirmation
-        if (state.step === 'preview') {
-          setPendingUploadImage(event.target.result as string);
-          setActiveUploadIndex(index);
-          setActiveRegenIndex(null); // Close regen if open
-        } else {
-          // In edit mode, update directly for speed
-          handleDayChange(index, 'imageUrl', event.target.result as string);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRegenerateImage = async (index: number) => {
-    if (!state.packageData) return;
-    const day = state.packageData.itinerary[index];
-    
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    await ensureApiKey();
-
-    try {
-      const imageUrl = await generateDayImage(
-        day.location,
-        day.title,
-        day.description || day.activities.join('. '),
-        regenPrompt
-      );
-      handleDayChange(index, 'imageUrl', imageUrl);
-      setActiveRegenIndex(null);
-      setRegenPrompt("");
-    } catch (err: any) {
-      console.error("Regeneration failed:", err);
-      let errMsg = err.message || "Failed to generate image.";
-      
-      if (err instanceof GeminiError && err.status === 403) {
-          errMsg = "API Key Permission Denied. Please ensure your project has billing enabled or the key is valid.";
-          window.aistudio?.openSelectKey();
-      } else if (err.message?.includes("PERMISSION_DENIED")) {
-          errMsg = "API Key error. Please re-select or update your API key.";
-          window.aistudio?.openSelectKey();
-      }
-      
-      setState(prev => ({ ...prev, error: errMsg }));
-    } finally {
-      setState(prev => ({ ...prev, isLoading: false }));
+      setState(prev => ({ ...prev, isLoading: false, error: err.message }));
     }
   };
 
@@ -263,15 +146,39 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        handleFieldChange('logoUrl', event.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePricingChange = (index: number, field: keyof PricingRow, value: string) => {
+    if (!state.packageData) return;
+    const newPricing = [...state.packageData.pricing];
+    newPricing[index] = { ...newPricing[index], [field]: value };
+    handleFieldChange('pricing', newPricing);
+  };
+
+  const addPricingRow = () => {
+    if (!state.packageData) return;
+    handleFieldChange('pricing', [...state.packageData.pricing, { label: 'New Category', value: '' }]);
+  };
+
+  const removePricingRow = (index: number) => {
+    if (!state.packageData) return;
+    const newPricing = state.packageData.pricing.filter((_, i) => i !== index);
+    handleFieldChange('pricing', newPricing);
+  };
+
   const handleStyleChange = (styleField: keyof ThemeStyles, value: any) => {
     if (!state.packageData) return;
-    setState(prev => ({
-      ...prev,
-      packageData: prev.packageData ? {
-        ...prev.packageData,
-        styles: { ...prev.packageData.styles, [styleField]: value }
-      } : null
-    }));
+    handleFieldChange('styles', { ...state.packageData.styles, [styleField]: value });
   };
 
   const handleThemeChange = (theme: ThemeType) => {
@@ -320,11 +227,49 @@ const App: React.FC = () => {
     handleFieldChange('itinerary', newItinerary);
   };
 
+  const handleRegenerateImage = async (index: number) => {
+    if (!state.packageData) return;
+    const day = state.packageData.itinerary[index];
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    await ensureApiKey();
+    try {
+      const imageUrl = await generateDayImage(day.location, day.title, day.description || day.activities.join('. '), regenPrompt);
+      handleDayChange(index, 'imageUrl', imageUrl);
+      setActiveRegenIndex(null);
+      setRegenPrompt("");
+    } catch (err: any) {
+      setState(prev => ({ ...prev, error: err.message }));
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleImageUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        if (state.step === 'preview') {
+          setPendingUploadImage(event.target.result as string);
+          setActiveUploadIndex(index); // index -1 for cover
+          setActiveRegenIndex(null);
+        } else {
+            if (index === -1) {
+                handleFieldChange('coverImageUrl', event.target.result as string);
+            } else {
+                handleDayChange(index, 'imageUrl', event.target.result as string);
+            }
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const downloadPDF = () => {
     if (!pdfRef.current) return;
     const element = pdfRef.current;
     setState(prev => ({ ...prev, isLoading: true }));
-    
     const opt = {
       margin: 0,
       filename: `${state.packageData?.packageName || 'Itinerary'}.pdf`,
@@ -332,49 +277,19 @@ const App: React.FC = () => {
       html2canvas: { scale: 3, useCORS: true, letterRendering: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: pdfOrientation }
     };
-    
-    html2pdf()
-      .set(opt)
-      .from(element)
-      .save()
-      .then(() => setState(prev => ({ ...prev, isLoading: false })))
-      .catch((err: any) => {
-          console.error("PDF generation failed:", err);
-          setState(prev => ({ ...prev, isLoading: false, error: "Failed to generate PDF. Large images might be causing an issue." }));
-      });
+    html2pdf().set(opt).from(element).save().then(() => setState(prev => ({ ...prev, isLoading: false })));
   };
 
   const downloadFlyerJpeg = async () => {
     if (!flyerRef.current) return;
     setState(prev => ({ ...prev, isLoading: true }));
-    try {
-        const canvas = await html2canvas(flyerRef.current, { scale: 4, useCORS: true });
-        const link = document.createElement('a');
-        link.download = `${state.packageData?.packageName || 'Itinerary'}_Flyer.jpg`;
-        link.href = canvas.toDataURL('image/jpeg', 1.0);
-        link.click();
-    } catch (err) {
-        console.error("JPEG export failed:", err);
-        setState(prev => ({ ...prev, error: "Failed to export JPEG flyer." }));
-    } finally {
-        setState(prev => ({ ...prev, isLoading: false }));
-    }
+    const canvas = await html2canvas(flyerRef.current, { scale: 4, useCORS: true });
+    const link = document.createElement('a');
+    link.download = `${state.packageData?.packageName || 'Itinerary'}_Flyer.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 1.0);
+    link.click();
+    setState(prev => ({ ...prev, isLoading: false }));
   };
-
-  const themes: { id: ThemeType; name: string }[] = [
-    { id: 'luxe', name: 'Classic Luxe' },
-    { id: 'vanguard', name: 'Modern Vanguard' },
-    { id: 'wanderlust', name: 'Adventurous Wanderlust' }
-  ];
-
-  const pricingFields = [
-    { key: 'soloBikePrice', label: 'Solo Bike Price' },
-    { key: 'dualRiderPrice', label: 'Dual Rider Price' },
-    { key: 'ownBikePrice', label: 'Own Bike Price' },
-    { key: 'extraPrice', label: 'Extra Price' },
-    { key: 'dualSharingExtra', label: 'Dual Sharing Extra Cost' },
-    { key: 'singleRoomExtra', label: 'Single Room Extra Cost' },
-  ] as const;
 
   return (
     <div className={`min-h-screen pb-20 font-sans transition-colors duration-500 bg-white`}>
@@ -387,25 +302,13 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-4 items-center">
           {state.step === 'edit' && (
-            <button onClick={() => setState(prev => ({ ...prev, step: 'preview' }))} className="btn-primary flex items-center gap-2 px-8">
-              Preview Itinerary
-            </button>
+            <button onClick={() => setState(prev => ({ ...prev, step: 'preview' }))} className="btn-primary flex items-center gap-2 px-8">Preview Itinerary</button>
           )}
           {state.step === 'preview' && (
             <>
               <div className="flex items-center bg-gray-50 border border-gray-200 rounded-md p-1 mr-2">
-                <button 
-                  onClick={() => setPdfOrientation('portrait')}
-                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-all ${pdfOrientation === 'portrait' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  Portrait
-                </button>
-                <button 
-                  onClick={() => setPdfOrientation('landscape')}
-                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-all ${pdfOrientation === 'landscape' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  Landscape
-                </button>
+                <button onClick={() => setPdfOrientation('portrait')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-all ${pdfOrientation === 'portrait' ? 'bg-white shadow-sm text-black' : 'text-gray-400'}`}>Portrait</button>
+                <button onClick={() => setPdfOrientation('landscape')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded transition-all ${pdfOrientation === 'landscape' ? 'bg-white shadow-sm text-black' : 'text-gray-400'}`}>Landscape</button>
               </div>
               <button onClick={() => setState(prev => ({ ...prev, step: 'edit' }))} className="btn-secondary">Back to Editor</button>
               <button onClick={downloadFlyerJpeg} className="btn-secondary">Export Flyer (JPEG)</button>
@@ -419,17 +322,14 @@ const App: React.FC = () => {
         {state.isLoading && (
           <div className="fixed inset-0 bg-white/95 backdrop-blur-sm z-[100] flex flex-col items-center justify-center">
             <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-black mb-6"></div>
-            <p className="text-xl font-serif italic text-gray-800">Processing...</p>
+            <p className="text-xl font-serif italic text-gray-800">Architecting your journey...</p>
           </div>
         )}
 
         {state.error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg mb-8 flex justify-between items-center sticky top-24 z-[60] shadow-md animate-in slide-in-from-top-4">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg mb-8 flex justify-between items-center">
             <span className="text-sm font-medium">{state.error}</span>
-            <div className="flex gap-4 items-center">
-               <button onClick={async () => await window.aistudio?.openSelectKey()} className="text-[10px] font-black uppercase tracking-widest bg-red-100 hover:bg-red-200 px-3 py-1 rounded">Update API Key</button>
-               <button onClick={() => setState(prev => ({ ...prev, error: null }))} className="text-2xl leading-none">&times;</button>
-            </div>
+            <button onClick={() => setState(prev => ({ ...prev, error: null }))} className="text-2xl">&times;</button>
           </div>
         )}
 
@@ -438,10 +338,8 @@ const App: React.FC = () => {
             <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-10 border shadow-inner">
                <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
             </div>
-            <h2 className="text-4xl font-serif mb-6">Upload Doc File</h2>
-            <p className="text-gray-500 mb-10 text-lg leading-relaxed max-w-md mx-auto">
-              Select your motorcycle tour document. We will automatically extract the day-wise pointers and structure.
-            </p>
+            <h2 className="text-4xl font-serif mb-6">Upload Document</h2>
+            <p className="text-gray-500 mb-10 text-lg">Select a doc file with tour details. We'll automatically extract package information, itinerary pointers, and pricing.</p>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".docx,.txt,.doc" className="hidden" />
             <button className="btn-primary text-xl px-12 py-4">Choose File</button>
           </div>
@@ -453,12 +351,28 @@ const App: React.FC = () => {
               <section className="luxury-card p-8">
                 <h3 className="text-xl font-serif font-bold mb-6 border-b pb-4">Branding</h3>
                 <div className="space-y-6">
-                  <div className="group relative flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-xl p-6 bg-gray-50/50 hover:bg-gray-100 transition-all cursor-pointer overflow-hidden" onClick={() => logoInputRef.current?.click()}>
-                    {state.packageData.logoUrl ? (
-                      <img src={state.packageData.logoUrl} alt="Logo" className="max-h-24 object-contain" />
-                    ) : (
-                      <span className="text-xs text-gray-400 font-black uppercase tracking-widest">Company Logo</span>
-                    )}
+                  <div className="flex flex-col items-center gap-4 mb-4">
+                    <div className="w-24 h-24 border border-dashed border-gray-200 rounded flex items-center justify-center overflow-hidden bg-zinc-50 relative group">
+                      {state.packageData.logoUrl ? (
+                        <>
+                          <img src={state.packageData.logoUrl} alt="Company Logo" className="max-w-full max-h-full object-contain" />
+                          <button 
+                            onClick={() => handleFieldChange('logoUrl', '')}
+                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs transition-opacity"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 uppercase font-black">No Logo</span>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => logoInputRef.current?.click()}
+                      className="text-[10px] font-black uppercase tracking-widest bg-zinc-100 px-4 py-2 rounded hover:bg-zinc-200 transition-colors"
+                    >
+                      {state.packageData.logoUrl ? 'Change Logo' : 'Upload Logo'}
+                    </button>
                     <input type="file" ref={logoInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
                   </div>
                   <input className="w-full p-3 border border-gray-100 rounded-lg outline-none font-serif text-lg" placeholder="Agency Name" value={state.packageData.companyName || ''} onChange={e => handleFieldChange('companyName', e.target.value)} />
@@ -466,171 +380,62 @@ const App: React.FC = () => {
               </section>
 
               <section className="luxury-card p-8">
-                <h3 className="text-xl font-serif font-bold mb-6 border-b pb-4">Theme & Style</h3>
-                <div className="space-y-8">
-                  <div className="grid grid-cols-1 gap-3">
-                    {themes.map(t => (
-                      <button key={t.id} onClick={() => handleThemeChange(t.id)} className={`text-left px-5 py-3 rounded-lg border transition-all ${state.packageData?.theme === t.id ? 'bg-black text-white' : 'bg-white text-gray-600'}`}>
-                        <span className="text-sm font-medium">{t.name}</span>
-                      </button>
-                    ))}
+                <h3 className="text-xl font-serif font-bold mb-6 border-b pb-4">Dynamic Pricing</h3>
+                <div className="space-y-4">
+                  <div className="flex gap-2 items-center mb-4">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Currency</label>
+                    <input className="flex-1 p-2 border border-gray-100 rounded outline-none text-sm font-bold" value={state.packageData.currency} onChange={e => handleFieldChange('currency', e.target.value)} />
                   </div>
-
-                  <div className="space-y-4 border-t pt-6">
-                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Colors</h4>
-                     <div className="grid grid-cols-1 gap-4">
-                        <div className="flex items-center justify-between">
-                           <span className="text-xs text-gray-500">Primary</span>
-                           <input type="color" className="w-8 h-8 rounded cursor-pointer border-none p-0" value={state.packageData.styles.primaryColor} onChange={(e) => handleStyleChange('primaryColor', e.target.value)} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                           <span className="text-xs text-gray-500">Accent</span>
-                           <input type="color" className="w-8 h-8 rounded cursor-pointer border-none p-0" value={state.packageData.styles.accentColor} onChange={(e) => handleStyleChange('accentColor', e.target.value)} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                           <span className="text-xs text-gray-500">Background</span>
-                           <input type="color" className="w-8 h-8 rounded cursor-pointer border-none p-0" value={state.packageData.styles.backgroundColor} onChange={(e) => handleStyleChange('backgroundColor', e.target.value)} />
-                        </div>
-                     </div>
-                  </div>
-
-                  <div className="space-y-6 border-t pt-6">
-                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Typography</h4>
-                     
-                     <div className="space-y-6">
-                        {/* Heading Fonts */}
-                        <div className="space-y-4 bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                          <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Headings Style</label>
-                          <div className="space-y-3">
-                            <select 
-                              className="w-full p-2 border border-gray-100 rounded text-xs outline-none bg-white" 
-                              value={state.packageData.styles.headingFont} 
-                              onChange={(e) => handleStyleChange('headingFont', e.target.value)}
-                            >
-                              {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.name}</option>)}
-                            </select>
-                            <div className="flex gap-2">
-                              <select 
-                                className="flex-1 p-2 border border-gray-100 rounded text-xs outline-none bg-white" 
-                                value={state.packageData.styles.headingWeight} 
-                                onChange={(e) => handleStyleChange('headingWeight', e.target.value)}
-                              >
-                                {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.name}</option>)}
-                              </select>
-                              <button 
-                                onClick={() => handleStyleChange('headingStyle', state.packageData?.styles.headingStyle === 'italic' ? 'normal' : 'italic')}
-                                className={`px-4 py-2 rounded border text-xs font-serif italic transition-all ${state.packageData.styles.headingStyle === 'italic' ? 'bg-black text-white' : 'bg-white text-gray-400 border-gray-100'}`}
-                              >
-                                I
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Body Fonts */}
-                        <div className="space-y-4 bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                          <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest">Body Text Style</label>
-                          <div className="space-y-3">
-                            <select 
-                              className="w-full p-2 border border-gray-100 rounded text-xs outline-none bg-white" 
-                              value={state.packageData.styles.bodyFont} 
-                              onChange={(e) => handleStyleChange('bodyFont', e.target.value)}
-                            >
-                              {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.name}</option>)}
-                            </select>
-                            <div className="flex gap-2">
-                              <select 
-                                className="flex-1 p-2 border border-gray-100 rounded text-xs outline-none bg-white" 
-                                value={state.packageData.styles.bodyWeight} 
-                                onChange={(e) => handleStyleChange('bodyWeight', e.target.value)}
-                              >
-                                {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.name}</option>)}
-                              </select>
-                              <button 
-                                onClick={() => handleStyleChange('bodyStyle', state.packageData?.styles.bodyStyle === 'italic' ? 'normal' : 'italic')}
-                                className={`px-4 py-2 rounded border text-xs font-serif italic transition-all ${state.packageData.styles.bodyStyle === 'italic' ? 'bg-black text-white' : 'bg-white text-gray-400 border-gray-100'}`}
-                              >
-                                I
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                     </div>
-                  </div>
+                  {state.packageData.pricing.map((p, idx) => (
+                    <div key={idx} className="space-y-2 p-3 bg-zinc-50 rounded-lg group">
+                      <div className="flex justify-between">
+                        <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Category {idx + 1}</label>
+                        <button onClick={() => removePricingRow(idx)} className="text-red-300 hover:text-red-500 text-xs opacity-0 group-hover:opacity-100">&times;</button>
+                      </div>
+                      <input className="w-full p-2 border border-gray-100 rounded text-sm mb-1" placeholder="Label (e.g. Per Person)" value={p.label} onChange={e => handlePricingChange(idx, 'label', e.target.value)} />
+                      <input className="w-full p-2 border border-gray-100 rounded text-sm" placeholder="Price (e.g. 5000)" value={p.value} onChange={e => handlePricingChange(idx, 'value', e.target.value)} />
+                    </div>
+                  ))}
+                  <button onClick={addPricingRow} className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-xs uppercase font-bold text-gray-400 hover:border-black hover:text-black transition-all">+ Add Pricing Option</button>
                 </div>
               </section>
 
               <section className="luxury-card p-8">
-                <h3 className="text-xl font-serif font-bold mb-6 border-b pb-4">Pricing ({state.packageData.currency})</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Currency</label>
-                    <input className="w-full p-2 border border-gray-100 rounded-lg outline-none text-sm font-bold" value={state.packageData.currency} onChange={e => handleFieldChange('currency', e.target.value)} />
+                <h3 className="text-xl font-serif font-bold mb-6 border-b pb-4">Typography</h3>
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Headings</label>
+                    <select className="w-full p-2 border border-gray-100 rounded text-xs outline-none" value={state.packageData.styles.headingFont} onChange={(e) => handleStyleChange('headingFont', e.target.value)}>
+                      {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.name}</option>)}
+                    </select>
                   </div>
-                  {pricingFields.map(field => (
-                    <div key={field.key}>
-                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{field.label}</label>
-                      <input 
-                        className="w-full p-2 border border-gray-100 rounded-lg outline-none text-sm" 
-                        placeholder="Price amount" 
-                        value={(state.packageData as any)[field.key] || ''} 
-                        onChange={e => handleFieldChange(field.key as any, e.target.value)} 
-                      />
-                    </div>
-                  ))}
+                  <div className="space-y-3">
+                    <label className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Body Text</label>
+                    <select className="w-full p-2 border border-gray-100 rounded text-xs outline-none" value={state.packageData.styles.bodyFont} onChange={(e) => handleStyleChange('bodyFont', e.target.value)}>
+                      {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.name}</option>)}
+                    </select>
+                  </div>
                 </div>
               </section>
             </aside>
 
             <section className="lg:col-span-8 space-y-8">
-               <h3 className="text-3xl font-serif font-bold mb-4">Itinerary Details</h3>
+               <h3 className="text-3xl font-serif font-bold mb-4">Itinerary Flow</h3>
                {state.packageData.itinerary.map((day, idx) => (
                  <div key={idx} className="luxury-card p-10 space-y-6 relative group border-l-4 border-transparent hover:border-black transition-all">
-                   <div className="absolute top-6 right-6 text-6xl font-serif opacity-5 select-none pointer-events-none">0{day.day}</div>
+                   <div className="absolute top-6 right-6 text-6xl font-serif opacity-5 select-none">0{day.day}</div>
+                   <input className="w-full text-2xl font-serif font-bold border-b border-transparent focus:border-gray-200 outline-none pb-2 bg-transparent" value={day.title} onChange={e => handleDayChange(idx, 'title', e.target.value)} />
+                   <input className="w-full p-3 border border-gray-50 rounded-lg outline-none bg-zinc-50/50" value={day.location} onChange={e => handleDayChange(idx, 'location', e.target.value)} />
                    
-                   <div className="space-y-4">
-                      <input className="w-full text-2xl font-serif font-bold border-b border-transparent focus:border-gray-200 outline-none pb-2 bg-transparent" value={day.title} onChange={e => handleDayChange(idx, 'title', e.target.value)} />
-                      <input className="w-full p-3 border border-gray-50 rounded-lg outline-none focus:bg-white bg-zinc-50/50" value={day.location} onChange={e => handleDayChange(idx, 'location', e.target.value)} />
-                   </div>
-
                    <div className="space-y-3">
-                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Day Pointers (Activities)</label>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Pointers</label>
                       {day.activities.map((act, actIdx) => (
                         <div key={actIdx} className="flex gap-2 group/act">
-                           <input 
-                              className="flex-1 p-2 border border-gray-50 rounded-lg outline-none text-sm bg-zinc-50/30 focus:bg-white" 
-                              value={act} 
-                              onChange={e => updateDayActivity(idx, actIdx, e.target.value)} 
-                           />
-                           <button onClick={() => removeDayActivity(idx, actIdx)} className="opacity-0 group-hover/act:opacity-100 text-red-300 hover:text-red-500 transition-opacity">&times;</button>
+                           <input className="flex-1 p-2 border border-gray-50 rounded-lg outline-none text-sm bg-zinc-50/30" value={act} onChange={e => updateDayActivity(idx, actIdx, e.target.value)} />
+                           <button onClick={() => removeDayActivity(idx, actIdx)} className="opacity-0 group-hover/act:opacity-100 text-red-300 hover:text-red-500">&times;</button>
                         </div>
                       ))}
-                      <button onClick={() => addDayActivity(idx)} className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-black transition-colors">+ Add Pointer</button>
-                   </div>
-                   
-                   <div className="pt-6 border-t border-gray-50 flex flex-col gap-4">
-                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Day Visual</label>
-                      <div className="flex items-center gap-6">
-                        <div className="w-48 aspect-video bg-gray-50 rounded-lg overflow-hidden border flex items-center justify-center relative group">
-                           {day.imageUrl ? (
-                             <>
-                               <img src={day.imageUrl} className="w-full h-full object-cover" alt="Day preview" />
-                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <label className="cursor-pointer text-white text-[10px] font-bold uppercase p-2 border border-white/40 rounded">
-                                    Change Image
-                                    <input type="file" accept="image/*" className="hidden" onChange={e => handleDayImageUpload(idx, e)} />
-                                  </label>
-                               </div>
-                             </>
-                           ) : (
-                             <label className="cursor-pointer text-[10px] text-gray-300 hover:text-black flex flex-col items-center gap-2">
-                               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                               Upload
-                               <input type="file" accept="image/*" className="hidden" onChange={e => handleDayImageUpload(idx, e)} />
-                             </label>
-                           )}
-                        </div>
-                      </div>
+                      <button onClick={() => addDayActivity(idx)} className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-black transition-colors">+ Add Activity</button>
                    </div>
                  </div>
                ))}
@@ -653,53 +458,50 @@ const App: React.FC = () => {
                 minHeight: pdfOrientation === 'landscape' ? '210mm' : '297mm'
               }}
             >
-              {/* Dynamic Theme Styles Injection */}
               <style dangerouslySetInnerHTML={{ __html: `
-                .itinerary-pdf-container h1, 
-                .itinerary-pdf-container h2, 
-                .itinerary-pdf-container h3, 
-                .itinerary-pdf-container h4,
-                .itinerary-pdf-container .heading-font {
+                .itinerary-pdf-container h1, .itinerary-pdf-container h2, .itinerary-pdf-container h3, .itinerary-pdf-container h4 {
                   font-family: ${state.packageData.styles.headingFont};
                   font-weight: ${state.packageData.styles.headingWeight};
                   font-style: ${state.packageData.styles.headingStyle};
                   color: ${state.packageData.styles.primaryColor};
                 }
-                .itinerary-pdf-container .accent-color {
-                  color: ${state.packageData.styles.accentColor};
-                }
-                .itinerary-pdf-container .accent-bg {
-                  background-color: ${state.packageData.styles.accentColor};
-                }
-                .itinerary-pdf-container .day-number {
-                  color: ${state.packageData.styles.primaryColor};
-                  opacity: 0.05;
-                }
-                .itinerary-pdf-container li::before {
-                  color: ${state.packageData.styles.accentColor};
-                }
               `}} />
 
-              {/* FLYER / COVER */}
+              {/* COVER - With Custom Upload Capability */}
               <div ref={flyerRef} className="relative -mx-[20mm] -mt-[20mm] mb-12 flex flex-col overflow-hidden group/cover" style={{height: pdfOrientation === 'landscape' ? '210mm' : '297mm'}}>
                 {state.packageData.coverImageUrl || state.packageData.itinerary[0]?.imageUrl ? (
                   <img src={state.packageData.coverImageUrl || state.packageData.itinerary[0]?.imageUrl} className="absolute inset-0 w-full h-full object-cover" alt="Cover" />
                 ) : (
-                  <div className="absolute inset-0 bg-zinc-900"></div>
+                  <div className="absolute inset-0 bg-zinc-900" />
                 )}
+                <div className="absolute inset-0 bg-black/40" />
                 
-                <div className="no-print absolute inset-0 bg-black/40 opacity-0 group-hover/cover:opacity-100 transition-opacity flex flex-col items-center justify-center z-20">
-                    <label className="px-8 py-4 bg-white text-black text-[10px] font-black uppercase rounded tracking-[0.3em] cursor-pointer shadow-2xl hover:scale-105 transition-transform">
-                      Upload Custom Cover
-                      <input type="file" accept="image/*" className="hidden" onChange={handleCoverImageUpload} />
-                    </label>
+                {/* Cover Overlay Action Area */}
+                <div className="no-print absolute inset-0 opacity-0 group-hover/cover:opacity-100 transition-opacity flex flex-col items-center justify-center p-8 text-white z-20">
+                    {activeUploadIndex === -1 && pendingUploadImage ? (
+                        <div className="w-full max-w-md space-y-6 bg-black/90 p-8 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md text-center">
+                            <h4 className="text-sm font-black uppercase tracking-[0.2em]">Confirm New Cover?</h4>
+                            <div className="w-full aspect-video rounded border border-white/20 overflow-hidden"><img src={pendingUploadImage} className="w-full h-full object-cover" /></div>
+                            <div className="flex gap-3">
+                                <button onClick={() => { handleFieldChange('coverImageUrl', pendingUploadImage); setActiveUploadIndex(null); setPendingUploadImage(null); }} className="flex-1 bg-green-500 text-white text-[10px] font-black uppercase py-4 rounded tracking-widest">Confirm</button>
+                                <button onClick={() => { setActiveUploadIndex(null); setPendingUploadImage(null); }} className="px-6 py-4 border border-white/20 text-[10px] uppercase font-black rounded text-white/70 hover:text-white">Cancel</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <label className="px-8 py-4 bg-white text-black text-[10px] font-black uppercase rounded tracking-widest cursor-pointer shadow-2xl hover:scale-105 transition-transform">
+                            Upload Custom Cover
+                            <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(-1, e)} />
+                        </label>
+                    )}
                 </div>
 
-                <div className={`absolute inset-0 bg-black/40`}></div>
                 <div className="relative z-10 p-24 h-full flex flex-col text-white">
                   <div className="flex justify-between items-start">
-                    {state.packageData.logoUrl ? <img src={state.packageData.logoUrl} className="h-16 object-contain brightness-0 invert" alt="Logo" /> : <div className="w-12 h-12 border-2 rounded-full border-white/20" />}
-                    <span className="text-sm font-black uppercase tracking-[0.4em]">{state.packageData.companyName}</span>
+                    {state.packageData.logoUrl ? (
+                      <img src={state.packageData.logoUrl} className="h-12 object-contain brightness-0 invert" alt="Company Logo" />
+                    ) : (
+                      <span className="text-sm font-black uppercase tracking-[0.4em]">{state.packageData.companyName || 'ADVENTURE ARCHITECT'}</span>
+                    )}
                   </div>
                   <div className="mt-auto">
                     <h1 className="text-8xl mb-8 leading-none tracking-tighter uppercase font-black text-white" style={{color: 'white'}}>{state.packageData.packageName}</h1>
@@ -721,15 +523,15 @@ const App: React.FC = () => {
               {/* INTRO */}
               <div className="py-20 text-center max-w-4xl mx-auto px-10">
                 <h2 className="text-5xl mb-10 italic">Journey Beyond Boundaries</h2>
-                <p className="text-xl leading-relaxed font-light opacity-80">Welcome to a road-trip redefined. We've captured the essence of the path ahead in these curated pointers, ensuring every day is a milestone of adventure.</p>
+                <p className="text-xl leading-relaxed font-light opacity-80">Curated travel experiences designed for those who seek the extraordinary. Your adventure starts here.</p>
               </div>
 
-              {/* ITINERARY FLOW */}
+              {/* ITINERARY */}
               <div className="py-20 space-y-64 px-10">
                 {state.packageData.itinerary.map((day, idx) => (
-                  <div key={idx} id={`day-${idx}`} className="space-y-12 relative">
+                  <div key={idx} className="space-y-12 relative">
                     <div className="flex items-center gap-10">
-                       <span className="text-9xl tracking-tighter leading-none day-number font-black absolute -left-12 -top-12">0{day.day}</span>
+                       <span className="text-9xl tracking-tighter leading-none opacity-5 font-black absolute -left-12 -top-12">0{day.day}</span>
                        <div className="relative z-10">
                           <span className="text-xs font-black uppercase tracking-widest opacity-40">Day 0{day.day}</span>
                           <h3 className="text-6xl tracking-tight leading-none">{day.title}</h3>
@@ -737,77 +539,39 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="relative group/img aspect-[16/9] overflow-hidden rounded-sm shadow-2xl bg-zinc-50">
-                      {day.imageUrl ? (
-                        <img src={day.imageUrl} className="w-full h-full object-cover" alt={day.title} />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-200">
-                           <span className="text-sm uppercase tracking-widest">No Image Selected</span>
-                        </div>
-                      )}
+                      {day.imageUrl ? <img src={day.imageUrl} className="w-full h-full object-cover" alt={day.title} /> : <div className="w-full h-full flex items-center justify-center text-zinc-200 uppercase tracking-widest text-xs">No Image</div>}
                       
-                      <div className="no-print absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center p-8 text-white text-center z-20">
+                      <div className="no-print absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col items-center justify-center p-8 text-white z-20">
                         {activeRegenIndex === idx ? (
-                          <div className="w-full max-w-sm space-y-4 animate-in fade-in zoom-in-95">
-                            <h4 className="text-xs font-black uppercase tracking-[0.2em] mb-2 text-white">AI Regeneration Prompt</h4>
-                            <textarea 
-                              className="w-full bg-white/10 border border-white/20 rounded p-3 text-sm focus:outline-none focus:bg-white/20 h-24 resize-none text-white"
-                              placeholder="Describe the new image based on these pointers..."
-                              value={regenPrompt}
-                              onChange={(e) => setRegenPrompt(e.target.value)}
-                            />
+                          <div className="w-full max-w-sm space-y-4">
+                            <textarea className="w-full bg-white/10 border border-white/20 rounded p-3 text-sm focus:outline-none h-24 resize-none text-white" placeholder="Custom AI Prompt..." value={regenPrompt} onChange={e => setRegenPrompt(e.target.value)} />
                             <div className="flex gap-2">
-                               <button onClick={() => handleRegenerateImage(idx)} className="flex-1 bg-white text-black text-[10px] font-black uppercase py-3 rounded tracking-widest">Generate</button>
-                               <button onClick={() => { setActiveRegenIndex(null); setRegenPrompt(""); }} className="px-4 py-3 border border-white/20 text-[10px] uppercase font-black tracking-widest rounded hover:bg-white/10">Cancel</button>
+                               <button onClick={() => handleRegenerateImage(idx)} className="flex-1 bg-white text-black text-[10px] font-black uppercase py-3 rounded">Generate</button>
+                               <button onClick={() => setActiveRegenIndex(null)} className="px-4 py-3 border border-white/20 text-[10px] uppercase font-black rounded">Cancel</button>
                             </div>
                           </div>
                         ) : activeUploadIndex === idx && pendingUploadImage ? (
-                          <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 bg-black/90 p-8 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
-                             <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white">Confirm New Image?</h4>
-                             <div className="w-full aspect-video rounded border border-white/20 overflow-hidden shadow-2xl">
-                                <img src={pendingUploadImage} className="w-full h-full object-cover" alt="New pending upload" />
-                             </div>
+                          <div className="w-full max-w-md space-y-6 bg-black/90 p-8 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md text-center">
+                             <div className="w-full aspect-video rounded border border-white/20 overflow-hidden"><img src={pendingUploadImage} className="w-full h-full object-cover" /></div>
                              <div className="flex gap-3">
-                                <button 
-                                  onClick={() => {
-                                    handleDayChange(idx, 'imageUrl', pendingUploadImage);
-                                    setActiveUploadIndex(null);
-                                    setPendingUploadImage(null);
-                                  }} 
-                                  className="flex-1 bg-green-500 hover:bg-green-600 text-white text-[10px] font-black uppercase py-4 rounded tracking-widest transition-all shadow-lg"
-                                >
-                                  Confirm & Replace
-                                </button>
-                                <button 
-                                  onClick={() => { setActiveUploadIndex(null); setPendingUploadImage(null); }} 
-                                  className="px-6 py-4 border border-white/20 text-[10px] uppercase font-black tracking-widest rounded hover:bg-white/10 text-white/70 hover:text-white"
-                                >
-                                  Cancel
-                                </button>
+                                <button onClick={() => { handleDayChange(idx, 'imageUrl', pendingUploadImage); setActiveUploadIndex(null); setPendingUploadImage(null); }} className="flex-1 bg-green-500 text-white text-[10px] font-black uppercase py-4 rounded tracking-widest">Confirm</button>
+                                <button onClick={() => { setActiveUploadIndex(null); setPendingUploadImage(null); }} className="px-6 py-4 border border-white/20 text-[10px] uppercase font-black rounded text-white/70 hover:text-white">Cancel</button>
                              </div>
                           </div>
                         ) : (
                           <div className="flex gap-4">
-                            <button onClick={() => { setActiveRegenIndex(idx); setActiveUploadIndex(null); }} className="px-6 py-3 bg-white text-black text-[10px] font-black uppercase rounded tracking-widest shadow-xl hover:scale-105 transition-transform">Regenerate (AI)</button>
-                            <label className="px-6 py-3 border border-white text-white text-[10px] font-black uppercase rounded tracking-widest cursor-pointer hover:bg-white/10 transition-colors">
-                              Upload File
-                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDayImageUpload(idx, e)} />
-                            </label>
+                            <button onClick={() => setActiveRegenIndex(idx)} className="px-6 py-3 bg-white text-black text-[10px] font-black uppercase rounded tracking-widest shadow-xl">Regenerate (AI)</button>
+                            <label className="px-6 py-3 border border-white text-white text-[10px] font-black uppercase rounded tracking-widest cursor-pointer">Upload<input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(idx, e)} /></label>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 opacity-40">
-                      <div className="w-4 h-px accent-bg" />
-                      <span className="text-[10px] uppercase tracking-[0.3em] font-black">{day.location}</span>
-                    </div>
-
-                    {/* POINTERS LIST */}
                     <div className="space-y-6">
                        <ul className="space-y-4">
                           {day.activities.map((act, actI) => (
                             <li key={actI} className="flex gap-6 items-start">
-                               <span className="text-xl font-light opacity-30 mt-[-4px] accent-color">•</span>
+                               <span className="text-xl font-light opacity-30 mt-[-4px]" style={{color: state.packageData.styles.accentColor}}>•</span>
                                <span className="text-lg leading-relaxed">{act}</span>
                             </li>
                           ))}
@@ -817,34 +581,21 @@ const App: React.FC = () => {
                 ))}
               </div>
 
-              {/* PRICING TABLE SECTION */}
-              <div className="mt-40 py-24 -mx-[20mm] px-[30mm] border-t border-zinc-100/20" style={{backgroundColor: 'rgba(0,0,0,0.02)'}}>
-                 <h3 className="text-4xl mb-16 pb-4 border-b" style={{borderColor: state.packageData.styles.primaryColor}}>Package Investment</h3>
-                 <div className="grid grid-cols-2 gap-20">
-                    <div className="space-y-8">
-                       {[
-                         {label: 'Solo Bike Price', value: state.packageData.soloBikePrice},
-                         {label: 'Dual Rider Price', value: state.packageData.dualRiderPrice},
-                         {label: 'Own Bike Price', value: state.packageData.ownBikePrice},
-                       ].map(row => (
-                        <div key={row.label} className="flex justify-between items-baseline border-b border-zinc-200/20 pb-2">
-                          <span className="font-black text-[10px] uppercase tracking-widest opacity-40">{row.label}</span>
-                          <span className="text-2xl font-light">{state.packageData.currency} {row.value || '-'}</span>
+              {/* PRICING SECTION - Dynamic Rows & Right-Down Position */}
+              <div className="mt-40 py-24 -mx-[20mm] px-[30mm] border-t border-zinc-100" style={{backgroundColor: 'rgba(0,0,0,0.02)'}}>
+                 <div className="max-w-4xl ml-auto flex flex-col items-end">
+                    <h3 className="text-4xl mb-12 pb-4 border-b w-full text-right" style={{borderColor: state.packageData.styles.primaryColor}}>Investment Details</h3>
+                    <div className="w-full grid grid-cols-1 gap-y-8">
+                        {state.packageData.pricing.map((p, idx) => (
+                        <div key={idx} className="flex justify-between items-baseline border-b border-zinc-200/50 pb-4">
+                            <span className="font-black text-[12px] uppercase tracking-widest opacity-40">{p.label}</span>
+                            <span className="text-4xl font-light">{state.packageData.currency} {p.value || '-'}</span>
                         </div>
-                       ))}
+                        ))}
                     </div>
-                    <div className="space-y-8">
-                       {[
-                         {label: 'Extra Prices', value: state.packageData.extraPrice},
-                         {label: 'Dual Sharing Extra', value: state.packageData.dualSharingExtra},
-                         {label: 'Single Room Extra', value: state.packageData.singleRoomExtra},
-                       ].map(row => (
-                        <div key={row.label} className="flex justify-between items-baseline border-b border-zinc-200/20 pb-2">
-                          <span className="font-black text-[10px] uppercase tracking-widest opacity-40">{row.label}</span>
-                          <span className="text-2xl font-light">{state.packageData.currency} {row.value || '-'}</span>
-                        </div>
-                       ))}
-                    </div>
+                    <p className="mt-12 text-[10px] uppercase tracking-widest opacity-30 font-bold italic text-right">
+                        * Prices are subject to change based on custom requirements and availability.
+                    </p>
                  </div>
               </div>
 
@@ -853,29 +604,21 @@ const App: React.FC = () => {
                 <div>
                   <h4 className="text-[10px] uppercase tracking-widest font-black mb-10 opacity-30 border-b pb-2" style={{borderColor: state.packageData.styles.primaryColor}}>Inclusions</h4>
                   <ul className="space-y-4">
-                    {state.packageData.inclusions.map((item, i) => (
-                      <li key={i} className="flex gap-4 items-start text-sm font-light">
-                        <span className="opacity-20">/</span> {item}
-                      </li>
-                    ))}
+                    {state.packageData.inclusions.map((item, i) => <li key={i} className="flex gap-4 items-start text-sm font-light"><span className="opacity-20">/</span> {item}</li>)}
                   </ul>
                 </div>
                 <div>
                   <h4 className="text-[10px] uppercase tracking-widest font-black mb-10 opacity-30 border-b pb-2" style={{borderColor: state.packageData.styles.primaryColor}}>Exclusions</h4>
                   <ul className="space-y-4">
-                    {state.packageData.exclusions.map((item, i) => (
-                      <li key={i} className="flex gap-4 items-start text-sm font-light opacity-60">
-                        <span className="opacity-20">×</span> {item}
-                      </li>
-                    ))}
+                    {state.packageData.exclusions.map((item, i) => <li key={i} className="flex gap-4 items-start text-sm font-light opacity-60"><span className="opacity-20">×</span> {item}</li>)}
                   </ul>
                 </div>
               </div>
 
               {/* FOOTER */}
-              <div className="py-20 text-center border-t border-gray-100/20 mt-20">
-                 <p className="text-3xl italic mb-4 heading-font">{state.packageData.companyName || 'Adventure Co.'}</p>
-                 <p className="text-[8px] uppercase tracking-[0.5em] opacity-30 font-black">Bespoke Journeys • Registered Travel Provider • © 2025</p>
+              <div className="py-20 text-center border-t border-gray-100 mt-20">
+                 <p className="text-3xl italic mb-4">{state.packageData.companyName || 'Adventure Architect'}</p>
+                 <p className="text-[8px] uppercase tracking-[0.5em] opacity-30 font-black">Bespoke Travel Planning • © 2025</p>
               </div>
             </div>
           </div>
