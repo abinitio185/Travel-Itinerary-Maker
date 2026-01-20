@@ -10,6 +10,18 @@ export interface ItineraryDay {
 
 export type ThemeType = 'luxe' | 'vanguard' | 'wanderlust';
 
+export interface ThemeStyles {
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  headingFont: string;
+  headingWeight: string;
+  headingStyle: 'normal' | 'italic';
+  bodyFont: string;
+  bodyWeight: string;
+  bodyStyle: 'normal' | 'italic';
+}
+
 export interface TravelPackage {
   packageName: string;
   destination: string;
@@ -33,6 +45,7 @@ export interface TravelPackage {
   coverImageUrl?: string;
   companyName?: string;
   theme: ThemeType;
+  styles: ThemeStyles;
 }
 
 export interface AppState {

@@ -2,6 +2,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { TravelPackage } from "../types";
 
+/**
+ * Custom error class for Gemini-related failures to distinguish between 
+ * transient API issues, validation errors, and configuration problems.
+ */
+export class GeminiError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly details?: any) {
+    super(message);
+    this.name = 'GeminiError';
+  }
+}
+
 export const parseItineraryFromText = async (text: string): Promise<Partial<TravelPackage>> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
@@ -59,11 +70,31 @@ export const parseItineraryFromText = async (text: string): Promise<Partial<Trav
     });
 
     const textResult = response.text;
-    if (!textResult) throw new Error("Empty response from AI.");
-    return JSON.parse(textResult);
+    if (!textResult) {
+        throw new GeminiError("The AI model returned an empty response. Please try with a clearer document.");
+    }
+    
+    try {
+        return JSON.parse(textResult);
+    } catch (parseErr) {
+        console.error("Failed to parse Gemini JSON output:", textResult);
+        throw new GeminiError("Failed to structure the document data correctly. The AI output was malformed.");
+    }
+    
   } catch (e: any) {
-    console.error("Gemini Parsing Error:", e);
-    throw new Error(`Failed to process itinerary: ${e.message || "Unknown error"}`);
+    console.error("Gemini Parsing Error Details:", e);
+    
+    if (e.message?.includes('429')) {
+        throw new GeminiError("Rate limit exceeded. Please wait a few seconds before trying again.", 429);
+    }
+    if (e.message?.includes('403') || e.message?.includes('401')) {
+        throw new GeminiError("API Key authentication failed. Please check your API key permissions.", 403);
+    }
+    if (e.message?.includes('SAFETY')) {
+        throw new GeminiError("The document content was flagged by safety filters. Please ensure it contains travel-related text.");
+    }
+
+    throw new GeminiError(e.message || "An unexpected error occurred while analyzing the document.");
   }
 };
 
@@ -99,9 +130,12 @@ export const generateDayImage = async (
         }
       }
     }
-    throw new Error("No image data returned from AI model.");
+    throw new GeminiError("No image was generated. The AI model might be busy or the prompt was restricted.");
   } catch (e: any) {
-    console.error("Image Generation Error:", e);
-    throw e;
+    console.error("Image Generation Error Details:", e);
+    if (e.message?.includes('SAFETY')) {
+        throw new GeminiError("Image generation blocked due to safety policies. Try modifying the location or title.");
+    }
+    throw new GeminiError(e.message || "Failed to generate image.");
   }
 };
