@@ -1,0 +1,8 @@
+{
+  "name": "Travel Itinerary Architect",
+  "description": "A high-end travel agency tool for generating professional, image-rich PDF itineraries using Gemini AI models for content, images, and video.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

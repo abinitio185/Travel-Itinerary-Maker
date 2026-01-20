@@ -1,0 +1,186 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Itinerary Architect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Inter:wght@300;400;500;600;800;900&family=Lora:ital,wght@0,400;0,700;1,400&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Mammoth for docx to html/text conversion -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- html2pdf for high quality PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- html2canvas for JPEG export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --primary-bg: #ffffff;
+            --primary-text: #1a1a1a;
+            --accent-color: #1a1a1a;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fcfcfc;
+            color: #1a1a1a;
+        }
+
+        h1, h2, h3, .font-serif {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .luxury-card {
+            background: white;
+            border: 1px solid #eaeaea;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+            border-radius: 8px;
+        }
+
+        .btn-primary {
+            background-color: #1a1a1a;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .btn-primary:hover {
+            background-color: #333;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: white;
+            color: #1a1a1a;
+            border: 1px solid #1a1a1a;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        /* --- Theme Styling --- */
+        
+        /* Luxe: Gold, Cream, Deep Navy */
+        .itinerary-pdf-container.luxe {
+            --theme-primary: #001f3f; /* Deep Navy */
+            --theme-accent: #D4AF37;  /* Gold */
+            --theme-bg: #FFFDF5;      /* Cream */
+            background-color: var(--theme-bg);
+            color: var(--theme-primary);
+            font-family: 'Playfair Display', serif;
+        }
+        .luxe h1, .luxe h2, .luxe h3, .luxe h4 {
+            color: var(--theme-primary);
+            font-weight: 700;
+        }
+        .luxe p, .luxe li {
+            font-family: 'Lora', serif;
+            color: var(--theme-primary);
+        }
+        .luxe .accent-line {
+            background-color: var(--theme-accent);
+        }
+        .luxe .day-number {
+            color: var(--theme-accent);
+            opacity: 0.4;
+        }
+
+        /* Vanguard: Minimalist, Monochrome, Sans-Serif */
+        .itinerary-pdf-container.vanguard {
+            --theme-primary: #000000;
+            --theme-accent: #333333;
+            --theme-bg: #ffffff;
+            background-color: var(--theme-bg);
+            color: var(--theme-primary);
+            font-family: 'Inter', sans-serif;
+        }
+        .vanguard h1, .vanguard h2, .vanguard h3, .vanguard h4 {
+            font-family: 'Inter', sans-serif;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: -0.05em;
+        }
+        .vanguard .accent-line {
+            background-color: var(--theme-primary);
+            height: 4px;
+        }
+        .vanguard .day-number {
+            color: #000;
+            font-weight: 900;
+            opacity: 0.1;
+        }
+        .vanguard p {
+            font-weight: 400;
+            line-height: 1.6;
+        }
+
+        /* Wanderlust: Earthy tones, Handwritten fonts, Textures */
+        .itinerary-pdf-container.wanderlust {
+            --theme-primary: #3E2723; /* Earthy Brown */
+            --theme-accent: #8D6E63;  /* Warm Clay */
+            --theme-bg: #F5F1E9;      /* Aged Paper */
+            background-color: var(--theme-bg);
+            background-image: url('https://www.transparenttextures.com/patterns/natural-paper.png');
+            color: var(--theme-primary);
+            font-family: 'Lora', serif;
+        }
+        .wanderlust h1, .wanderlust h2 {
+            font-family: 'Lora', serif;
+            font-weight: 700;
+        }
+        .wanderlust .handwritten {
+            font-family: 'Caveat', cursive;
+            font-size: 1.5rem;
+            color: var(--theme-accent);
+        }
+        .wanderlust .accent-line {
+            background-color: var(--theme-accent);
+            opacity: 0.5;
+        }
+        .wanderlust .day-number {
+            color: var(--theme-primary);
+            opacity: 0.2;
+            font-family: 'Caveat', cursive;
+        }
+
+        /* Standard PDF Sizing */
+        .itinerary-pdf-container {
+            width: 210mm; /* A4 width */
+            margin: 0 auto;
+            background: white;
+            padding: 20mm;
+            min-height: 297mm;
+        }
+
+        @media print {
+            .no-print { display: none; }
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 10px;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>
